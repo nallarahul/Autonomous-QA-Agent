@@ -1,0 +1,33 @@
+{
+  "api_version": "v1",
+  "endpoints": {
+    "apply_coupon": {
+      "method": "POST",
+      "url": "/api/apply_coupon",
+      "payload": {
+        "code": "string"
+      },
+      "responses": {
+        "200": "Discount applied",
+        "400": "Invalid coupon code"
+      }
+    },
+    "submit_order": {
+      "method": "POST",
+      "url": "/api/submit_order",
+      "payload": {
+        "user_details": {
+          "name": "string",
+          "email": "string",
+          "address": "string"
+        },
+        "payment_method": "string",
+        "shipping_method": "string"
+      },
+      "responses": {
+        "200": "Order created successfully",
+        "500": "Internal Server Error"
+      }
+    }
+  }
+}
