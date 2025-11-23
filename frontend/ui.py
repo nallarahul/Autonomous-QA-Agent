@@ -1,10 +1,10 @@
 import streamlit as st
 import requests
 
-# Backend API URL
+# pointing to our fastAPI backend
 API_URL = "http://localhost:8000"
 
-# --- Page Configuration ---
+# basic page setup
 st.set_page_config(
     page_title="QA Automation Agent",
     page_icon="🤖",
@@ -12,29 +12,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Custom CSS for cleaner look ---
+# styling tweaks - mostly to keep the chat input pinned to the bottom
 st.markdown("""
     <style>
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-    }
-    .success-box {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-        margin-bottom: 1rem;
-    }
-    /* Fix for chat input sticking to bottom */
-    .stChatInput {
-        position: fixed;
-        bottom: 0;
-        margin-bottom: 20px;
-        border: 1.5px solid #FF4B4B;
-    }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; }
+    .success-box { padding: 1rem; border-radius: 0.5rem; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; margin-bottom: 1rem; }
+    .stChatInput { position: fixed; bottom: 0; margin-bottom: 20px; border: 1.5px solid #FF4B4B; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,14 +25,12 @@ st.title("Autonomous QA Agent")
 st.markdown("### AI-Powered Test Case & Script Generation")
 st.markdown("---")
 
-# --- Session State Initialization ---
-if 'test_cases' not in st.session_state:
-    st.session_state['test_cases'] = []
-if 'generated_script' not in st.session_state:
-    st.session_state['generated_script'] = ""
-if 'kb_built' not in st.session_state:
-    st.session_state['kb_built'] = False
-# NEW: We need a message history to keep the chat above the input bar
+# initializing session state so we don't lose data when the app reruns
+if 'test_cases' not in st.session_state: st.session_state['test_cases'] = []
+if 'generated_script' not in st.session_state: st.session_state['generated_script'] = ""
+if 'kb_built' not in st.session_state: st.session_state['kb_built'] = False
+
+# we need a default greeting in the history
 if 'messages' not in st.session_state:
     st.session_state['messages'] = [
         {"role": "assistant", "content": "👋 Hi! I'm your AI QA Lead. Build the Knowledge Base, then ask me to generate test cases."}
@@ -59,7 +40,7 @@ if 'messages' not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Configuration")
     
-    # Section 1: Knowledge Base
+    # 1. handling the document uploads
     st.subheader("1. Knowledge Base")
     uploaded_files = st.file_uploader(
         "Upload Requirements (MD, TXT, PDF)", 
@@ -68,6 +49,7 @@ with st.sidebar:
         help="Upload product specs or UI guides here."
     )
     
+    # send files to the backend to create embeddings
     if st.button("Build Knowledge Base", type="primary"):
         if uploaded_files:
             files = [("files", (f.name, f, "text/plain")) for f in uploaded_files]
@@ -84,7 +66,7 @@ with st.sidebar:
         else:
             st.warning("Upload files first.")
             
-    # Status Indicator
+    # visual cue for the user
     if st.session_state['kb_built']:
         st.markdown('<div class="success-box">AI Brain: <b>Active</b></div>', unsafe_allow_html=True)
     else:
@@ -92,7 +74,7 @@ with st.sidebar:
 
     st.divider()
     
-    # Section 2: Target Application
+    # 2. handling the target html input
     st.subheader("2. Target Application")
     input_method = st.radio("Input Source:", ["Paste HTML Code", "Upload HTML File"])
     
@@ -105,7 +87,7 @@ with st.sidebar:
             html_content = html_file.read().decode("utf-8")
             st.markdown('<div class="success-box">HTML file: <b>Loaded</b></div>', unsafe_allow_html=True)
     
-    # Store HTML in session state so it persists between tabs
+    # keep the html in memory
     if html_content:
         st.session_state['html_content'] = html_content
 
@@ -113,36 +95,35 @@ with st.sidebar:
 
 tab1, tab2 = st.tabs(["Generate Test Cases", "Generate Code"])
 
-# --- TAB 1: Intelligent Test Planning (Chat Interface) ---
+# --- TAB 1: Chat Interface ---
 with tab1:
     st.subheader("AI QA Lead")
     
-    # 1. DISPLAY HISTORY FIRST (This ensures messages appear above input)
+    # render the history first so it sits above the input bar
     for msg in st.session_state['messages']:
         with st.chat_message(msg["role"]):
-            # If it's a list, it means these are test cases (JSON data)
             if isinstance(msg["content"], list):
+                # special handling for the JSON test cases
                 st.write(f"I found **{len(msg['content'])} test scenarios** based on your docs:")
                 for tc in msg["content"]:
                     with st.expander(f"{tc.get('Test_ID', 'ID')}: {tc.get('Test_Scenario')}"):
                         st.markdown(f"**Expected Result:** {tc.get('Expected_Result')}")
                         st.markdown(f"**Source:** _{tc.get('Grounded_In')}_")
             else:
-                # Normal text message
                 st.write(msg["content"])
 
-    # 2. INPUT BAR AT BOTTOM
+    # capture user input
     if user_query := st.chat_input("Ex: Generate negative test cases for the discount feature"):
         
         if not st.session_state['kb_built']:
             st.error("Please build the Knowledge Base in the sidebar first !!")
         else:
-            # A. Append User Message to History
+            # update history immediately for UX
             st.session_state['messages'].append({"role": "user", "content": user_query})
             with st.chat_message("user"):
                 st.write(user_query)
             
-            # B. Generate Response
+            # fetch response from backend
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
                     try:
@@ -151,25 +132,18 @@ with tab1:
                         
                         if response.status_code == 200:
                             data = response.json()
-                            
-                            # Store for Tab 2 logic
                             st.session_state['test_cases'] = data 
-                            
-                            # Append AI Response (Data) to History
                             st.session_state['messages'].append({"role": "assistant", "content": data})
-                            
-                            # Force a rerun so the history loop above renders this new message
-                            st.rerun()
+                            st.rerun() # refresh to show the new message
                         else:
                             st.error(f"Server Error: {response.text}")
                     except Exception as e:
                         st.error(f"Connection Error: {e}")
 
-# --- TAB 2: Automation Engineer (Script Gen) ---
+# --- TAB 2: Script Generation ---
 with tab2:
     st.subheader("Selenium Script Generator")
     
-    # Ensure HTML content is retrieved safely
     html_safe = st.session_state.get('html_content', "")
 
     if not st.session_state['test_cases']:
@@ -177,7 +151,6 @@ with tab2:
     elif not html_safe:
         st.warning("⚠️ Please provide HTML content in the Sidebar.")
     else:
-        # Layout: Selection on Left, Code on Right
         c1, c2 = st.columns([1, 2])
         
         with c1:
@@ -191,6 +164,7 @@ with tab2:
             selected_tc = test_cases[selected_idx]
             st.info(selected_tc.get('Test_Scenario'))
             
+            # calling the selenium agent
             if st.button("⚡ Generate Script", type="primary"):
                 with st.spinner("Writing Python Selenium code..."):
                     try:
@@ -211,7 +185,7 @@ with tab2:
             if st.session_state['generated_script']:
                 st.code(st.session_state['generated_script'], language="python")
                 st.download_button(
-                    "📥 Download Script", 
+                    "Download Script", 
                     data=st.session_state['generated_script'], 
                     file_name="test_script.py", 
                     mime="text/x-python"
